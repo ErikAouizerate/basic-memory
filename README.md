@@ -31,10 +31,11 @@ So this repository is a deployment, not a program:
 | File | Role |
 | --- | --- |
 | `Caddyfile` | Checks `Authorization: Bearer` and proxies to the MCP server |
-| `docker-compose.yml` | The MCP server (never exposed) + the Caddy gateway |
+| `docker-compose.yml` | The MCP server (never exposed) + the Caddy gateway + the Syncthing sync service |
 | `docker-compose.local.yml` | Local-only override that publishes the gateway on `127.0.0.1:8080` |
 | `.env.example` | The one secret you must set |
 | `scripts/smoke-test.sh` | Proves auth works and the tools are reachable |
+| `scripts/syncthing-*.sh` | Device ID, folder setup and pairing for Syncthing |
 
 The `basic-memory` service publishes no ports. Only `gateway` is routable, and
 it forwards nothing without a valid token. TLS and the public domain are
@@ -96,6 +97,45 @@ claude mcp add --transport http basic-memory https://<your-domain>/mcp \
 
 Then `/mcp` inside Claude Code should show the server connected with its tools
 listed. Codex and Cursor take the same URL and header in their MCP config.
+
+## Syncing the notes (Syncthing)
+
+The `syncthing` service shares the `notes` volume with the MCP server, so you
+can edit the knowledge base on your laptop (Obsidian, VS Code, ...) and have
+changes flow both ways in real time. The management UI is bound to loopback
+and never published; all server-side configuration happens through the CLI
+via `docker compose exec`. Nothing needs to be exposed: Syncthing devices
+connect outbound or fall back to its encrypted relay network.
+
+### First-time pairing
+
+1. Make sure the stack is up: `docker compose -f docker-compose.yml
+   -f docker-compose.local.yml up -d`.
+2. On the server: `./scripts/syncthing-setup.sh` — creates the shared folder
+   (random ID, stored in `.syncthing-folder-id`) and prints the server device
+   ID and the folder ID.
+3. On the laptop: install the Syncthing desktop app, add the server device
+   (paste the printed device ID), add a folder with the **same folder ID**
+   pointing at e.g. `~/Notes/basic-memory` (send & receive), and share it
+   with the server device.
+4. On the server: `./scripts/syncthing-pair.sh <laptop-device-id>` — adds the
+   laptop and shares the folder back.
+5. The first sync pushes the existing notes to the laptop; after that both
+   sides edit in real time. Conflicts are kept as `.sync-conflict-*` files.
+
+`./scripts/syncthing-device-id.sh` prints the server device ID again if you
+lost it.
+
+### Troubleshooting
+
+```bash
+# Is the daemon healthy?
+docker compose exec syncthing syncthing cli --gui-address 127.0.0.1:8384 \
+  --gui-apikey "$(docker compose exec -T syncthing sed -n 's/.*<apikey>\([^<]*\)<\/apikey>.*/\1/p' /var/syncthing/config/config.xml)" show system
+```
+
+The API key is always read from the container's own `config.xml`; the helper
+scripts wrap this, so prefer them over raw `cli` calls.
 
 ## Rotating the token
 
