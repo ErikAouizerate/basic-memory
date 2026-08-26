@@ -31,16 +31,31 @@ the `syncthing cli` inside the container.
 ```yaml
   syncthing:
     image: syncthing/syncthing:latest
-    hostname: basic-memory
+    hostname: syncthing
     environment:
       PUID: "1000"
       PGID: "1000"
       STGUIADDRESS: "127.0.0.1:8384"
+    entrypoint: /bin/sh -c "chown $${PUID}:$${PGID} /var/syncthing/config && exec /bin/entrypoint.sh /bin/syncthing"
     volumes:
       - syncthing-config:/var/syncthing/config
       - notes:/var/syncthing/data
     restart: unless-stopped
 ```
+
+Implementation corrections (verified against Syncthing v2.1.3):
+
+- `hostname: syncthing`, NOT `basic-memory`. The embedded DNS registers
+  hostnames as A records; `hostname: basic-memory` made `basic-memory`
+  resolve to both containers, and the gateway's `basic-memory:8000` dials
+  became nondeterministic (verified: alternating IPs before the fix, stable
+  after).
+- The `entrypoint:` override is required: the official image entrypoint
+  chowns only `$HOME` (`/var/syncthing`, non-recursive), so a fresh named
+  volume mounted at `/var/syncthing/config` stays root-owned and the daemon
+  crash-loops with `save cert: permission denied`. The override chowns the
+  config dir as root before delegating to the official entrypoint
+  (`$${}` escapes compose interpolation).
 
 - `syncthing-config` named volume: persists `key.pem` (the device identity)
   and `config.xml` across Dokploy redeploys. A fresh volume would generate a

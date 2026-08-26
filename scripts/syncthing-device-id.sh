@@ -10,4 +10,11 @@ cli() {
   ' sh "$@"
 }
 
-cli show system | sed -n 's/.*"myID"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+DEVICE_ID=$(cli show system | sed -n 's/.*"myID"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+[[ -n "$DEVICE_ID" ]] || {
+  echo "failed to read the server device ID" >&2
+  exit 1
+}
+
+printf '%s\n' "$DEVICE_ID"

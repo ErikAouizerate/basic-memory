@@ -35,7 +35,9 @@ Insert between the `basic-memory` service (ends line 38 with `restart: unless-st
 ```yaml
   syncthing:
     image: syncthing/syncthing:latest
-    hostname: basic-memory
+    # Never "basic-memory": that registers a second A record for the name
+    # and makes the gateway's basic-memory:8000 dials nondeterministic.
+    hostname: syncthing
     environment:
       # Match the basic-memory image's appuser (UID/GID 1000) so both
       # containers can write the shared notes volume.
@@ -43,6 +45,11 @@ Insert between the `basic-memory` service (ends line 38 with `restart: unless-st
       PGID: "1000"
       # Management UI stays on loopback; it is never published or exposed.
       STGUIADDRESS: "127.0.0.1:8384"
+    # The image entrypoint only chowns $HOME (/var/syncthing), not volumes
+    # mounted under it, so a fresh named volume at /var/syncthing/config is
+    # root-owned and the daemon crash-loops. Chown it first, then let the
+    # official entrypoint run.
+    entrypoint: /bin/sh -c "chown $${PUID}:$${PGID} /var/syncthing/config && exec /bin/entrypoint.sh /bin/syncthing"
     volumes:
       # Device identity (key.pem) + config.xml. Must persist across
       # redeploys or the device ID changes and clients have to re-pair.

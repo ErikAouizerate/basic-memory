@@ -39,7 +39,9 @@ services:
 
   syncthing:
     image: syncthing/syncthing:latest
-    hostname: basic-memory
+    # Never "basic-memory": that would register a second A record for the
+    # name and make the gateway's basic-memory:8000 dials nondeterministic.
+    hostname: syncthing
     environment:
       # Match the basic-memory image's appuser (UID/GID 1000) so both
       # containers can write the shared notes volume.
