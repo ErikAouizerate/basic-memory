@@ -121,7 +121,8 @@ connect outbound or fall back to its encrypted relay network.
 4. On the server: `./scripts/syncthing-pair.sh <laptop-device-id>` — adds the
    laptop and shares the folder back.
 5. The first sync pushes the existing notes to the laptop; after that both
-   sides edit in real time. Conflicts are kept as `.sync-conflict-*` files.
+   sides edit in real time. On a conflict, Syncthing keeps both versions as
+   `*.sync-conflict-*` files next to the original.
 
 `./scripts/syncthing-device-id.sh` prints the server device ID again if you
 lost it.
