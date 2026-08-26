@@ -1,0 +1,59 @@
+services:
+  basic-memory:
+    image: ghcr.io/basicmachines-co/basic-memory:latest
+    command:
+      - basic-memory
+      - mcp
+      - --transport
+      - streamable-http
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --path
+      - /mcp
+      - --project
+      - main
+    environment:
+      # BASIC_MEMORY_HOME (/app/data/basic-memory) and BASIC_MEMORY_PROJECT_ROOT
+      # (/app/data) are already set by the image; do not override them.
+      BASIC_MEMORY_DEFAULT_PROJECT: main
+      # Without this the server writes config.json, memory.db and the embedding
+      # cache to $HOME/.basic-memory, which no volume covers: the whole index
+      # would be rebuilt on every redeploy. /app/.basic-memory exists in the
+      # image owned by appuser, so the named volume inherits writable ownership.
+      BASIC_MEMORY_CONFIG_DIR: /app/.basic-memory
+      # Set to "false" if the host is short on RAM: search falls back to
+      # full-text instead of downloading the ~130MB embedding model.
+      BASIC_MEMORY_SEMANTIC_SEARCH_ENABLED: "true"
+    volumes:
+      # Markdown notes. The image points BASIC_MEMORY_HOME at /app/data/basic-memory.
+      - notes:/app/data
+      # config.json, memory.db and the fastembed model cache, redirected here by
+      # BASIC_MEMORY_CONFIG_DIR above.
+      - config:/app/.basic-memory
+    # No published ports: only the gateway can reach this service.
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  gateway:
+    image: caddy:2-alpine
+    environment:
+      MCP_TOKEN: ${MCP_TOKEN:?MCP_TOKEN is required}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - basic-memory
+    networks:
+      - default
+      - dokploy-network
+    restart: unless-stopped
+
+volumes:
+  notes:
+  config:
+
+networks:
+  dokploy-network:
+    external: true

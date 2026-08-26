@@ -1,0 +1,29 @@
+{
+	admin off
+	auto_https off
+}
+
+:8080 {
+	# Unauthenticated liveness probe for Dokploy / Traefik.
+	handle /health {
+		respond "ok" 200
+	}
+
+	# {$MCP_TOKEN} is substituted before the Caddyfile is parsed, so this is an
+	# exact match against the literal token value.
+	@authorized header Authorization "Bearer {$MCP_TOKEN}"
+
+	handle @authorized {
+		reverse_proxy basic-memory:8000 {
+			# The token is consumed here; never forward it upstream.
+			header_up -Authorization
+			# streamable-http replies with an SSE stream: never buffer it.
+			flush_interval -1
+		}
+	}
+
+	handle {
+		header WWW-Authenticate `Bearer realm="basic-memory", error="invalid_token"`
+		respond `{"error":"unauthorized"}` 401
+	}
+}
