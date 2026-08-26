@@ -30,9 +30,15 @@
 
 ## Syncthing (load-bearing details)
 
-- UI bound to `127.0.0.1:8384`, never published; all server-side config goes
-  through `scripts/syncthing-{device-id,setup,pair}.sh`, which wrap
+- UI bound to `127.0.0.1:8384`, never published; the helper scripts
+  (`scripts/syncthing-{device-id,setup,pair}.sh`) run **inside the
+  container** — invoke with `docker compose exec -T syncthing sh
+  /scripts/...` locally, or `sh /scripts/...` in the Dokploy service
+  terminal (`./scripts:/scripts:ro` is mounted by compose). They wrap
   `syncthing cli` with the API key read from the container's `config.xml`.
+- The pairing folder ID is stored in the `syncthing-config` volume
+  (`/var/syncthing/config/syncthing-folder-id`), not in git; if it is lost
+  `setup.sh` reuses the sole existing folder before minting a new ID.
 - `hostname: syncthing` must NOT become `basic-memory` again: the embedded
   DNS would register a duplicate A record and the gateway's
   `basic-memory:8000` dials become nondeterministic.
@@ -41,8 +47,8 @@
   the daemon crash-loops.
 - `PUID`/`PGID` 1000 must match the basic-memory image's `appuser` — both
   containers share the `notes` volume.
-- `.syncthing-folder-id` (gitignored) holds the pairing folder ID; it is
-  not in git, so a Dokploy re-clone loses it and `setup.sh` mints a new ID.
+- No `ports:` on the service by default (relay-only connectivity); the README
+  documents how to publish `22000` for direct connections.
 
 ## Dokploy policy
 

@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Print the server's Syncthing device ID (input for pairing a client).
+# Runs inside the syncthing container: `docker compose exec -T syncthing sh
+# /scripts/syncthing-device-id.sh` locally, or the Dokploy service terminal
+# (`sh /scripts/syncthing-device-id.sh`).
 set -euo pipefail
-cd "$(dirname "$0")/.."
+
+CONFIG_DIR="${STHOMEDIR:-/var/syncthing/config}"
 
 cli() {
-  docker compose exec -T syncthing sh -c '
-    key=$(sed -n "s/.*<apikey>\\([^<]*\\)<\\/apikey>.*/\\1/p" /var/syncthing/config/config.xml)
-    exec syncthing cli --gui-address 127.0.0.1:8384 --gui-apikey "$key" "$@"
-  ' sh "$@"
+  key=$(sed -n 's/.*<apikey>\([^<]*\)<\/apikey>.*/\1/p' "$CONFIG_DIR/config.xml")
+  syncthing cli --gui-address 127.0.0.1:8384 --gui-apikey "$key" "$@"
 }
 
 DEVICE_ID=$(cli show system | sed -n 's/.*"myID"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')

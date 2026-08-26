@@ -1,27 +1,28 @@
 #!/usr/bin/env bash
 # Pair a client device (e.g. laptop) and share the notes folder with it.
+# Runs inside the syncthing container: `docker compose exec -T syncthing sh
+# /scripts/syncthing-pair.sh <client-device-id>` locally, or the Dokploy
+# service terminal (`sh /scripts/syncthing-pair.sh <client-device-id>`).
 set -euo pipefail
-cd "$(dirname "$0")/.."
 
 if [[ $# -ne 1 ]]; then
   echo "usage: $0 <client-device-id>" >&2
   exit 1
 fi
 
+CONFIG_DIR="${STHOMEDIR:-/var/syncthing/config}"
+FOLDER_FILE="$CONFIG_DIR/syncthing-folder-id"
 CLIENT_ID="$1"
-FOLDER_FILE=".syncthing-folder-id"
 
 [[ -f "$FOLDER_FILE" ]] || {
-  echo "no folder configured yet — run scripts/syncthing-setup.sh first" >&2
+  echo "no folder configured yet — run syncthing-setup.sh first" >&2
   exit 1
 }
 FOLDER_ID=$(cat "$FOLDER_FILE")
 
 cli() {
-  docker compose exec -T syncthing sh -c '
-    key=$(sed -n "s/.*<apikey>\\([^<]*\\)<\\/apikey>.*/\\1/p" /var/syncthing/config/config.xml)
-    exec syncthing cli --gui-address 127.0.0.1:8384 --gui-apikey "$key" "$@"
-  ' sh "$@"
+  key=$(sed -n 's/.*<apikey>\([^<]*\)<\/apikey>.*/\1/p' "$CONFIG_DIR/config.xml")
+  syncthing cli --gui-address 127.0.0.1:8384 --gui-apikey "$key" "$@"
 }
 
 cli config devices add --device-id "$CLIENT_ID" --name laptop

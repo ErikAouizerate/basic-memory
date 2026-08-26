@@ -55,6 +55,9 @@ services:
     # official entrypoint run.
     entrypoint: /bin/sh -c "chown $${PUID}:$${PGID} /var/syncthing/config && exec /bin/entrypoint.sh /bin/syncthing"
     volumes:
+      # Helper scripts, run via the Dokploy service terminal or
+      # `docker compose exec -T syncthing sh /scripts/...`.
+      - ./scripts:/scripts:ro
       # Device identity (key.pem) + config.xml. Must persist across
       # redeploys or the device ID changes and clients have to re-pair.
       - syncthing-config:/var/syncthing/config

@@ -103,40 +103,63 @@ listed. Codex and Cursor take the same URL and header in their MCP config.
 The `syncthing` service shares the `notes` volume with the MCP server, so you
 can edit the knowledge base on your laptop (Obsidian, VS Code, ...) and have
 changes flow both ways in real time. The management UI is bound to loopback
-and never published; all server-side configuration happens through the CLI
-via `docker compose exec`. Nothing needs to be exposed: Syncthing devices
-connect outbound or fall back to its encrypted relay network.
+and never published; all configuration happens through the helper scripts,
+which run **inside the container** (the repo's `scripts/` directory is
+mounted read-only at `/scripts`).
 
 ### First-time pairing
 
-1. Make sure the stack is up: `docker compose -f docker-compose.yml
-   -f docker-compose.local.yml up -d`.
-2. On the server: `./scripts/syncthing-setup.sh` — creates the shared folder
-   (random ID, stored in `.syncthing-folder-id`) and prints the server device
-   ID and the folder ID.
+1. Make sure the stack is up.
+2. On the server, open the Syncthing service terminal (Dokploy UI → service
+   → Terminal) and run `sh /scripts/syncthing-setup.sh` — it creates the
+   shared folder (random ID, stored in the `syncthing-config` volume) and
+   prints the server device ID and the folder ID. If a folder already
+   exists it reuses it, so re-runs are safe.
 3. On the laptop: install the Syncthing desktop app, add the server device
    (paste the printed device ID), add a folder with the **same folder ID**
    pointing at e.g. `~/Notes/basic-memory` (send & receive), and share it
    with the server device.
-4. On the server: `./scripts/syncthing-pair.sh <laptop-device-id>` — adds the
-   laptop and shares the folder back.
+4. Back in the server terminal: `sh /scripts/syncthing-pair.sh
+   <laptop-device-id>` — adds the laptop and shares the folder back.
 5. The first sync pushes the existing notes to the laptop; after that both
    sides edit in real time. On a conflict, Syncthing keeps both versions as
    `*.sync-conflict-*` files next to the original.
 
-`./scripts/syncthing-device-id.sh` prints the server device ID again if you
-lost it.
+`sh /scripts/syncthing-device-id.sh` prints the server device ID again if
+you lost it.
+
+### Same pairing locally
+
+Locally the same scripts run through compose instead of the Dokploy
+terminal:
+
+```bash
+docker compose exec -T syncthing sh /scripts/syncthing-setup.sh
+docker compose exec -T syncthing sh /scripts/syncthing-pair.sh <laptop-device-id>
+```
+
+### Connectivity
+
+By default the server publishes **no port**: the laptop reaches it through
+Syncthing's encrypted relay network (slower transfers, zero host exposure —
+only devices paired by device ID can sync, and the relay only ever sees
+encrypted data). The notes volume is never exposed in clear text; the
+management UI is never published.
+
+To switch to direct connections, publish the sync port and open the VPS
+firewall — add `22000:22000/tcp` and `22000:22000/udp` to the `syncthing`
+service in `docker-compose.yml`, then `ufw allow 22000/tcp` and
+`ufw allow 22000/udp` on the host. Relays remain the fallback.
 
 ### Troubleshooting
 
 ```bash
-# Is the daemon healthy?
+# Is the daemon healthy? (the API key lives in the container's config.xml)
 docker compose exec syncthing syncthing cli --gui-address 127.0.0.1:8384 \
   --gui-apikey "$(docker compose exec -T syncthing sed -n 's/.*<apikey>\([^<]*\)<\/apikey>.*/\1/p' /var/syncthing/config/config.xml)" show system
 ```
 
-The API key is always read from the container's own `config.xml`; the helper
-scripts wrap this, so prefer them over raw `cli` calls.
+The helper scripts wrap this, so prefer them over raw `cli` calls.
 
 ## Rotating the token
 
