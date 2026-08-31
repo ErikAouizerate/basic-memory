@@ -1,0 +1,47 @@
+# Local dev only. Auto-merged by `docker compose up` (no -f flag needed).
+# Never applied on Dokploy, which deploys docker-compose.yml alone.
+#
+#   sh scripts/init-local-volumes.sh   # once; creates ./volumes/*
+#   docker compose up -d
+services:
+  gateway:
+    ports:
+      # Only the loopback interface: the smoke test and local clients reach
+      # the gateway here, without exposing anything on the network.
+      - "127.0.0.1:8080:8080"
+
+  # Local-only: named volumes are replaced by bind mounts on ./volumes/<name>
+  # so the data is directly editable and navigable from the host. The folders
+  # are created and chowned to UID 1000 by scripts/init-local-volumes.sh.
+  basic-memory:
+    volumes:
+      - ./volumes/notes:/app/data
+      - ./volumes/config:/app/.basic-memory
+
+  syncthing:
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./volumes/syncthing-config:/var/syncthing/config
+      - ./volumes/notes:/var/syncthing/data
+
+  todo-agent:
+    volumes:
+      - ./agent:/agent:ro
+      - ./volumes/notes:/app/data
+      - ./volumes/todo-agent-state:/app/state
+
+  # Devcontainer shell. Not a real service: keeps the container alive so VS
+  # Code / the devcontainer CLI can attach and edit the repo and the volumes.
+  dev:
+    image: mcr.microsoft.com/devcontainers/base:ubuntu
+    command: sleep infinity
+    working_dir: /workspace
+    volumes:
+      # The whole repo, ./volumes/ included, so the notes and config are
+      # browsable/editable from the dev environment too.
+      - .:/workspace
+    depends_on:
+      - basic-memory
+      - syncthing
+      - todo-agent
+      - gateway

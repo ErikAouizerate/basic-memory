@@ -13,8 +13,15 @@
 
 ## Local workflow
 
-- Start: `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d`
-  (the local override publishes the gateway on `127.0.0.1:8080` only).
+- Start: `sh scripts/init-local-volumes.sh && docker compose up -d`
+  (`docker-compose.override.yml` is auto-merged — no `-f` flag. It publishes
+  the gateway on `127.0.0.1:8080` only and bind-mounts the named volumes to
+  `./volumes/<volume-name>`, so notes/config are editable on the host).
+- Devcontainer: open the repo in VS Code and "Reopen in Container". It attaches
+  to the `dev` service of `docker-compose.override.yml` while the whole stack
+  runs; inside it, smoke-test via `BASE_URL=http://gateway:8080`.
+- Local volumes: `./volumes/` is gitignored and owned by UID 1000 for `notes`
+  and `config` (see `scripts/init-local-volumes.sh`).
 - Validate: `docker compose -f docker-compose.yml config --quiet`
 - Verify: `set -a && source .env && set +a && BASE_URL=http://localhost:8080 ./scripts/smoke-test.sh`
 - The MCP server logs to a file, not stdout:
@@ -25,7 +32,7 @@
 - Compose interpolates the **shell environment over `.env`**: if
   `MCP_TOKEN` is exported in the shell, `docker compose up` uses that value,
   not `.env`. To recreate a service with the `.env` token:
-  `env -u MCP_TOKEN docker compose -f docker-compose.yml -f docker-compose.local.yml up -d <service>`.
+  `env -u MCP_TOKEN docker compose up -d <service>`.
 - Rotating `MCP_TOKEN` requires recreating the gateway — Caddy bakes the
   token into the Caddyfile matcher at startup.
 - `.env` is required (`${MCP_TOKEN:?}`) and gitignored; never commit it.
@@ -56,7 +63,7 @@
 
 - Never add `ports:` to `docker-compose.yml` — the shared Dokploy host
   routes through Traefik internally. Ports to localhost belong in
-  `docker-compose.local.yml` only.
+  `docker-compose.override.yml` only.
 
 ## Todo agent (load-bearing details)
 
@@ -84,6 +91,7 @@
 
 - Communication with the user: **French**. Code, comments, docs, tests:
   **English**.
+- Basic Memory is abbreviated **`bm`** (product, CLI, repo).
 - Commits directly on `main`, conventional prefixes (`feat:`/`fix:`/`docs:`/`chore:`),
   push to `origin` (GitLab).
 - No test framework: verify with `compose config` + `smoke-test.sh`;

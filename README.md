@@ -9,6 +9,8 @@ Python, no Markdown files on the client, no stdio pipe.
 
 ## There is no application code here, on purpose
 
+Basic Memory is abbreviated **`bm`** (product, CLI and this repo).
+
 `basic-memory` already ships a complete MCP server that speaks streamable HTTP:
 
 ```
@@ -32,7 +34,7 @@ So this repository is a deployment, not a program:
 | --- | --- |
 | `Caddyfile` | Checks `Authorization: Bearer` and proxies to the MCP server |
 | `docker-compose.yml` | The MCP server (never exposed) + the Caddy gateway + the Syncthing sync service |
-| `docker-compose.local.yml` | Local-only override that publishes the gateway on `127.0.0.1:8080` |
+| `docker-compose.override.yml` | Dev-only override, auto-merged by `docker compose up`: publishes the gateway on `127.0.0.1:8080` and binds the named volumes to `./volumes/` |
 | `.env.example` | The one secret you must set |
 | `scripts/smoke-test.sh` | Proves auth works and the tools are reachable |
 | `scripts/syncthing-*.sh` | Device ID, folder setup and pairing for Syncthing |
@@ -50,7 +52,11 @@ docker network create dokploy-network
 cp .env.example .env
 echo "MCP_TOKEN=$(openssl rand -base64 32)" > .env
 
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+# Create ./volumes/* and set ownership (see "Local volumes" below).
+sh scripts/init-local-volumes.sh
+
+# docker-compose.override.yml is merged automatically — no -f flag needed.
+docker compose up -d
 
 set -a && source .env && set +a
 BASE_URL=http://localhost:8080 ./scripts/smoke-test.sh
@@ -70,6 +76,50 @@ All checks passed.
 The smoke test fails loudly if an unauthenticated request is *not* rejected, so
 it doubles as the security check.
 
+## Local volumes
+
+Locally, the named volumes of `docker-compose.yml` are replaced (dev-only) by
+bind mounts on `volumes/<volume-name>` in this project — `volumes/notes`,
+`volumes/config`, `volumes/syncthing-config`, `volumes/todo-agent-state` — so
+the data is directly editable and navigable from the host file manager, an
+editor, or Obsidian. `volumes/` is gitignored.
+
+Two folders must be owned by UID 1000 (the `appuser` of the basic-memory image
+and syncthing's `PUID`/`PGID`); bind mounts get no Docker "copy up" or chown:
+
+```bash
+sh scripts/init-local-volumes.sh   # idempotent; run before every compose up
+```
+
+The script creates the folders, chowns `notes` and `config` to UID 1000 when
+run as root (no-op when your UID is already 1000), and warns with the exact
+`sudo chown` command otherwise. Existing named volumes from a previous local
+stack are abandoned when you switch to bind mounts — copy the data into
+`volumes/` first if you want to keep it. In production Dokploy keeps the named
+volumes, untouched by this override.
+
+## Development (devcontainer)
+
+This project ships a devcontainer based on the same two compose files, so the
+containerized dev environment matches `docker compose up` exactly. It attaches
+to a dedicated `dev` service (`mcr.microsoft.com/devcontainers/base:ubuntu`)
+while the whole stack runs: the MCP server, the gateway, syncthing and the
+todo agent. The repo — `volumes/` included — is the workspace.
+
+- **VS Code**: open the repo and "Reopen in Container". `.env` must exist on
+  the host (the compose stack runs on the host Docker), and the host needs the
+  `dokploy-network` external network.
+- **CLI**: `npm install -g @devcontainers/cli`, then
+  `devcontainer up --workspace-folder .`.
+- **Without VS Code**: `sh scripts/init-local-volumes.sh && docker compose up -d`.
+
+Inside the container the smoke test targets the gateway by service name:
+
+```bash
+set -a && source .env && set +a
+BASE_URL=http://gateway:8080 ./scripts/smoke-test.sh
+```
+
 ## Deploy on Dokploy
 
 1. Create a **Compose** application pointing at this repository.
@@ -85,8 +135,9 @@ it doubles as the security check.
 
    This also confirms Traefik forwards the `Authorization` header intact.
 
-Dokploy uses `docker-compose.yml` alone — the `docker-compose.local.yml`
-override is never applied there, so nothing is published on the host.
+Dokploy uses `docker-compose.yml` alone — `docker-compose.override.yml` is never
+applied there (nothing is published on the host, and the `./volumes/` bind
+mounts and the `dev` service stay local).
 
 ## Connect a client
 

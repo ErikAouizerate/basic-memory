@@ -1,1 +1,4 @@
 .env
+
+# Local bind-mount targets for the compose override (docker-compose.override.yml).
+volumes/
