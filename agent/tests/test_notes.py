@@ -8,6 +8,7 @@ from unittest import mock
 
 from notes import (
     _rewrite_if_unchanged,
+    append_result,
     atomic_write,
     ensure_frontmatter,
     ensure_result_section,
@@ -157,7 +158,7 @@ class EnsureResultSectionTest(unittest.TestCase):
         out = ensure_result_section("# Title\nline", ["Foo"])
         self.assertIn("## Résultat", out)
         self.assertIn("[[Foo]]", out)
-        self.assertIn("- [ ] Traité — supprimable", out)
+        self.assertNotIn("Traité — supprimable", out)
 
     def test_replaces_existing_section(self):
         body = "# Title\n## Résultat\n- [[Old]]\n- [ ] Traité — supprimable\n"
@@ -165,6 +166,29 @@ class EnsureResultSectionTest(unittest.TestCase):
         self.assertNotIn("[[Old]]", out)
         self.assertIn("[[New]]", out)
         self.assertEqual(out.count("## Résultat"), 1)
+        self.assertNotIn("Traité — supprimable", out)
+
+
+class AppendResultTest(unittest.TestCase):
+    def test_appends_section_and_resets_process(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "n.md"
+            p.write_text("---\nprocess: true\n---\n# Body", encoding="utf-8")
+            self.assertTrue(append_result(p, ["Foo"]))
+            text = p.read_text(encoding="utf-8")
+            self.assertIn("## Résultat", text)
+            self.assertIn("[[Foo]]", text)
+            self.assertIn("process: false", text)
+            self.assertNotIn("process: true", text)
+
+    def test_leaves_process_alone_when_absent(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "n.md"
+            p.write_text("# Body", encoding="utf-8")
+            self.assertTrue(append_result(p, ["Foo"]))
+            text = p.read_text(encoding="utf-8")
+            self.assertIn("## Résultat", text)
+            self.assertNotIn("process", text)
 
 
 class SplitNoteTest(unittest.TestCase):

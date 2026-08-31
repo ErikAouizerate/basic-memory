@@ -280,7 +280,21 @@ def _render_note(result: dict) -> str:
 def ensure_result_section(body: str, result_titles: list[str]) -> str:
     section = RESULT_SECTION + "\n"
     section += "".join(f"- [[{t}]]\n" for t in result_titles)
-    section += f"- [ ] {RESULT_MARKER}\n"
     prefix = re.split(rf"\n?{re.escape(RESULT_SECTION)}\n", body, maxsplit=1)[0]
     prefix = prefix.rstrip("\n")
     return prefix + "\n\n" + section.rstrip("\n") + "\n"
+
+
+def append_result(path: Path, result_titles: list[str]) -> bool:
+    """Append/replace the ``## Résultat`` section and reset ``process: false``
+    on fresh content, never clobbering a concurrent user edit. Returns True on
+    success, False when the file stayed busy."""
+
+    def _apply(text: str) -> str:
+        front, body, raw = split_note(text)
+        new_body = ensure_result_section(body, result_titles)
+        if front.get("process") is not None:
+            raw = set_frontmatter_value(raw, "process", "false")
+        return raw + new_body
+
+    return _rewrite_if_unchanged(path, _apply)
