@@ -57,7 +57,7 @@ def _acquire_lock(state_dir: Path):
 
 
 def process_note(path: Path, notes_dir: Path, client: llm.ChatClient) -> list[str]:
-    front, body, frontmatter = notes.read_note(path)
+    front, body, _ = notes.read_note(path)
     if notes.is_hub(front):
         return []
     context = ""
@@ -83,11 +83,8 @@ def process_note(path: Path, notes_dir: Path, client: llm.ChatClient) -> list[st
             raise llm.LLMError(f"Invalid result entry: {result!r}")
         notes.write_result_note(notes_dir, result.get("folder", "tools"), result)
         titles.append(result["title"])
-    # Re-emit the original frontmatter block verbatim (list-valued fields
-    # like tags only survive if untouched); the result section replaces any
-    # previous one.
-    new_body = frontmatter + notes.ensure_result_section(body, titles)
-    path.write_text(new_body, encoding="utf-8")
+    if not notes.append_result(path, titles):
+        raise llm.LLMError(f"could not write result section to {path.name} (file busy)")
     return titles
 
 
@@ -102,7 +99,8 @@ def run_once(notes_dir: Path, state_dir: Path, client: llm.ChatClient) -> tuple[
 
 
 def _run_once(notes_dir: Path, state_dir: Path, client: llm.ChatClient) -> tuple[int, int]:
-    """One cycle: delete ticked notes, then process new/modified ones.
+    """One cycle: delete approved notes, migrate/annotate the rest, then
+    process the notes whose `process` flag is ticked.
 
     Returns (handled, failed); failed notes are logged and retried next cycle.
     """
@@ -112,8 +110,8 @@ def _run_once(notes_dir: Path, state_dir: Path, client: llm.ChatClient) -> tuple
     deleted = 0
     for path in todo_files:
         try:
-            _, body, _ = notes.read_note(path)
-            if notes.has_ticked_checkbox(body):
+            front, body, _ = notes.read_note(path)
+            if notes.frontmatter_bool(front, "deletable") or notes.has_ticked_checkbox(body):
                 rel = str(path.relative_to(notes_dir))
                 path.unlink()
                 store.remove(rel)
@@ -131,6 +129,10 @@ def _run_once(notes_dir: Path, state_dir: Path, client: llm.ChatClient) -> tuple
             if notes.is_hub(front):
                 continue
             rel = str(path.relative_to(notes_dir))
+            if notes.frontmatter_bool(front, "process") is not True:
+                if not notes.frontmatter_is_complete(front) and notes.is_stable(path):
+                    notes.ensure_frontmatter(path)
+                continue
             current = state_mod.sha256_file(path)
             if current == store.hash_for(rel):
                 continue
@@ -159,7 +161,7 @@ def main(argv=None) -> int:
     state_dir = Path(os.environ.get("STATE_DIR", "/app/state"))
     base_url = os.environ.get("LLM_BASE_URL", "https://opencode.ai/zen/v1")
     model = os.environ.get("LLM_MODEL", "deepseek-v4-flash")
-    interval = int(os.environ.get("POLL_INTERVAL", "60"))
+    interval = int(os.environ.get("POLL_INTERVAL", "5"))
     client = llm.ChatClient(api_key=api_key, base_url=base_url, model=model)
 
     if args.once:
