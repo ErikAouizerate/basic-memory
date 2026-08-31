@@ -214,9 +214,9 @@ The helper scripts wrap this, so prefer them over raw `cli` calls.
 
 ## Todo agent (autonomous processing of todo notes)
 
-The `todo-agent` service polls the notes volume every minute (`POLL_INTERVAL`)
-and processes new or modified notes in the `todo/` folder. A todo note is a
-request written from any synced device; the agent interprets it via the
+The `todo-agent` service polls the notes volume every 5 seconds (`POLL_INTERVAL`)
+and processes notes in the `todo/` folder whose `process` flag is ticked. A todo
+note is a request written from any synced device; the agent interprets it via the
 OpenCode Zen API, writes the result into the knowledge base and reports back
 inside the todo note.
 
@@ -227,28 +227,39 @@ Variables (all optional except `LLM_API_KEY`):
 | `LLM_API_KEY` | — (required) | OpenCode Zen API key (`https://opencode.ai/zen/v1`) |
 | `LLM_BASE_URL` | `https://opencode.ai/zen/v1` | OpenAI-compatible base URL |
 | `LLM_MODEL` | `deepseek-v4-flash` | Model name |
-| `POLL_INTERVAL` | `60` | Seconds between cycles |
+| `POLL_INTERVAL` | `5` | Seconds between cycles |
 | `NOTES_DIR` | `/app/data/basic-memory` | Project root, where `todo/` lives (mounted `notes` volume); local dev overrides it to `/app/data/basic-memory/main` in `docker-compose.override.yml` |
 | `STATE_DIR` | `/app/state` | State file location (`todo-agent-state` volume) |
 
+A new note dropped in `todo/` is detected within a few seconds and annotated
+with the action frontmatter (`title`, `type: todo`, `tags: [todo]`,
+`process: false`, `deletable: false`), which render as toggles in Obsidian.
+Existing frontmatter keys are never overwritten.
+
 Lifecycle of a todo note:
 
-1. Drop a note in `todo/` (e.g. a URL to evaluate). The agent detects it at the
-   next cycle (sha256 of the file content), fetches the URLs for context, and
-   asks the LLM for a JSON result.
-2. The result note is written to the requested folder (tool evaluations land in
-   `tools/`, following the existing note conventions) and the todo note gains a
-   `## Résultat` section with `[[wikilinks]]` and a checkbox
-   `- [ ] Traité — supprimable`.
-3. When you tick the checkbox (`- [x] Traité — supprimable`), the agent deletes
-   the todo note at the next cycle. The result note stays in the knowledge base.
-4. Editing an already-processed todo note reprocesses it (the result is updated,
-   not duplicated).
+1. Drop a note in `todo/` (e.g. a URL to evaluate). The agent adds the action
+   frontmatter at the next cycle. Nothing is processed until you tick `process`.
+2. Tick `process: true` in the frontmatter. At the next cycle the agent fetches
+   the URLs for context, asks the LLM for a JSON result, writes the result note
+   to the requested folder (tool evaluations land in `tools/`), appends a
+   `## Résultat` section with `[[wikilinks]]`, and resets `process` to `false`.
+   Re-ticking `process` reprocesses the note (result updated, not duplicated).
+3. Tick `deletable: true` in the frontmatter and the agent deletes the todo
+   note at the next cycle. The result note stays in the knowledge base. The
+   legacy body checkbox `- [x] Traité — supprimable` is still honored.
+4. Editing an already-processed todo note and re-ticking `process` reprocesses it.
 
 Notes are processed top-level only; `*.sync-conflict-*` files and notes with
 `type: hub` frontmatter (e.g. `TODO — General Hub`) are ignored. The agent's
 bookkeeping lives in the `todo-agent-state` volume — never in the synced notes
 folder, so it cannot cause sync conflicts.
+
+Concurrent edits are handled merge-only: the agent writes atomically (temp file
++ rename), re-reads the note immediately before writing, and only touches a
+file that has been stable for a few seconds — so it never clobbers an edit you
+make while it works. If your editor later overwrites the injected frontmatter
+with a stale buffer, the agent re-injects it at the next cycle.
 
 Verify a single cycle manually:
 

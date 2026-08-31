@@ -89,7 +89,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY is required}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://opencode.ai/zen/v1}
       LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash}
-      POLL_INTERVAL: ${POLL_INTERVAL:-60}
+      POLL_INTERVAL: ${POLL_INTERVAL:-5}
       # Directory holding the notes for project "main". Defaults to the
       # project root (BASIC_MEMORY_HOME /app/data/basic-memory), where fresh
       # deployments and Syncthing put the notes directly, so todo/ resolves

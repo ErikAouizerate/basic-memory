@@ -68,19 +68,27 @@
 ## Todo agent (load-bearing details)
 
 - The `todo-agent` service polls the `notes` volume (`todo/` folder) every
-  `POLL_INTERVAL` seconds (default 60) and processes new/modified notes via the
-  OpenCode Zen API (`LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` env vars; image
+  `POLL_INTERVAL` seconds (default 5) and processes notes via the OpenCode Zen
+  API (`LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` env vars; image
   `python:3.12-slim`, stdlib only, no dependencies to install).
+- New notes get action frontmatter injected at the next cycle (`title`,
+  `type: todo`, `tags: [todo]`, `process: false`, `deletable: false`) — merged
+  in, existing keys never overwritten. Processing is gated on `process: true`;
+  after processing the agent resets it to `false` (re-tick = reprocess).
+- A note with `deletable: true` in its frontmatter is deleted at the next
+  cycle; the legacy body checkbox `- [x] Traité — supprimable` is still
+  honored. `*.sync-conflict-*` files and `type: hub` notes (e.g.
+  `TODO — General Hub`) are ignored.
+- Writes are atomic (temp file + rename), the file is re-read immediately
+  before writing, and only notes stable for 3 s are touched, so the agent
+  never clobbers a concurrent user edit; if a stale editor buffer overwrites
+  the injected frontmatter, it is re-injected at the next cycle.
 - It writes markdown directly on the `notes` volume (like syncthing) — the
   basic-memory file watcher reindexes. Its state file lives in the
   `todo-agent-state` volume (`/app/state/state.json`), deliberately NOT in the
   notes volume, so it never syncs and never conflicts.
-- `*.sync-conflict-*` files and `type: hub` notes (e.g. `TODO — General Hub`)
-  are ignored.
-- A ticked checkbox `- [x] Traité — supprimable` in a todo note makes the agent
-  delete that note at the next cycle; a modified processed note is reprocessed
-  (result updated, not duplicated). The agent records the hash after its own
-  writes, so its edits never trigger a reprocess loop.
+- The agent records the hash after its own writes, so its edits never trigger
+  a reprocess loop.
 - Same env gotcha as `MCP_TOKEN`: compose interpolates the shell environment
   over `.env`, so an exported `LLM_API_KEY` wins over `.env`.
 - Manual verification: `docker compose exec todo-agent python /agent/main.py --once`;
