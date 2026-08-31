@@ -90,9 +90,12 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-https://opencode.ai/zen/v1}
       LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash}
       POLL_INTERVAL: ${POLL_INTERVAL:-60}
-      # Project root, not BASIC_MEMORY_HOME: the notes for project "main"
-      # live at /app/data/basic-memory/main, so todo/ resolves correctly.
-      NOTES_DIR: /app/data/basic-memory/main
+      # Directory holding the notes for project "main". Defaults to the
+      # project root (BASIC_MEMORY_HOME /app/data/basic-memory), where fresh
+      # deployments and Syncthing put the notes directly, so todo/ resolves
+      # to /app/data/basic-memory/todo. Local dev nests the notes under a
+      # main/ subfolder; that override lives in docker-compose.override.yml.
+      NOTES_DIR: ${NOTES_DIR:-/app/data/basic-memory}
       STATE_DIR: /app/state
     volumes:
       - ./agent:/agent:ro

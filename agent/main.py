@@ -155,7 +155,7 @@ def main(argv=None) -> int:
     if not api_key:
         print("LLM_API_KEY is required", file=sys.stderr)
         return 2
-    notes_dir = Path(os.environ.get("NOTES_DIR", "/app/data/basic-memory/main"))
+    notes_dir = Path(os.environ.get("NOTES_DIR", "/app/data/basic-memory"))
     state_dir = Path(os.environ.get("STATE_DIR", "/app/state"))
     base_url = os.environ.get("LLM_BASE_URL", "https://opencode.ai/zen/v1")
     model = os.environ.get("LLM_MODEL", "deepseek-v4-flash")

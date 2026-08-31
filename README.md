@@ -228,7 +228,7 @@ Variables (all optional except `LLM_API_KEY`):
 | `LLM_BASE_URL` | `https://opencode.ai/zen/v1` | OpenAI-compatible base URL |
 | `LLM_MODEL` | `deepseek-v4-flash` | Model name |
 | `POLL_INTERVAL` | `60` | Seconds between cycles |
-| `NOTES_DIR` | `/app/data/basic-memory/main` | Project root, where `todo/` lives (mounted `notes` volume) |
+| `NOTES_DIR` | `/app/data/basic-memory` | Project root, where `todo/` lives (mounted `notes` volume); local dev overrides it to `/app/data/basic-memory/main` in `docker-compose.override.yml` |
 | `STATE_DIR` | `/app/state` | State file location (`todo-agent-state` volume) |
 
 Lifecycle of a todo note:

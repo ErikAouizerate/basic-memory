@@ -25,6 +25,10 @@ services:
       - ./volumes/notes:/var/syncthing/data
 
   todo-agent:
+    environment:
+      # Local syncthing syncs the notes into ./volumes/notes/basic-memory/main,
+      # so todo/ lives under main/ instead of at the project root.
+      NOTES_DIR: /app/data/basic-memory/main
     volumes:
       - ./agent:/agent:ro
       - ./volumes/notes:/app/data
