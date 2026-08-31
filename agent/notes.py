@@ -1,11 +1,14 @@
 """Reading, scanning and writing markdown notes on the notes volume."""
+import os
 import re
+import time
 import urllib.request
 from pathlib import Path
 
 TODO_DIR = "todo"
 RESULT_MARKER = "Traité — supprimable"
 RESULT_SECTION = "## Résultat"
+STABLE_SECONDS = 3
 
 CONFLICT_RE = re.compile(r"\.sync-conflict-\d+-\d+.*\.md$", re.IGNORECASE)
 URL_RE = re.compile(r"https?://[^\s)\]}>\"']+")
@@ -22,20 +25,26 @@ def list_todo_files(notes_dir: Path) -> list[Path]:
     return sorted(p for p in todo.glob("*.md") if not CONFLICT_RE.search(p.name))
 
 
-def read_note(path: Path) -> tuple[dict, str, str]:
-    """Return (frontmatter dict, body str, raw frontmatter block str).
+def split_note(text: str) -> tuple[dict, str, str]:
+    """Parse a note's text into (frontmatter dict, body str, raw block str).
 
     The raw block includes the leading/trailing ``---`` delimiters and a
-    trailing newline, or ``""`` when the note has no frontmatter. It is
-    preserved verbatim on write so list-valued fields (e.g. ``tags``)
-    survive a rewrite.
+    trailing newline, or ``""`` when the note has no frontmatter.
     """
-    text = path.read_text(encoding="utf-8")
     if text.startswith("---"):
         parts = text.split("---", 2)
         if len(parts) == 3:
             return _parse_frontmatter(parts[1]), parts[2].lstrip("\n"), "---" + parts[1] + "---\n"
     return {}, text, ""
+
+
+def read_note(path: Path) -> tuple[dict, str, str]:
+    """Return (frontmatter dict, body str, raw frontmatter block str).
+
+    The raw block is preserved verbatim on write so list-valued fields
+    (e.g. ``tags``) survive a rewrite.
+    """
+    return split_note(path.read_text(encoding="utf-8"))
 
 
 def _parse_frontmatter(block: str) -> dict:
@@ -57,6 +66,47 @@ def _parse_frontmatter(block: str) -> dict:
 
 def is_hub(frontmatter: dict) -> bool:
     return frontmatter.get("type") == "hub"
+
+
+def is_stable(path: Path, min_age: float = STABLE_SECONDS) -> bool:
+    """True when the file's mtime is at least ``min_age`` seconds old, so the
+    agent does not touch a note mid-typing."""
+    try:
+        return time.time() - path.stat().st_mtime >= min_age
+    except OSError:
+        return False
+
+
+def atomic_write(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` via a temp file + ``os.replace`` so neither
+    the basic-memory watcher nor Syncthing ever sees a torn write."""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _rewrite_if_unchanged(path: Path, transform) -> bool:
+    """Apply ``transform(text) -> new_text``, writing atomically only if the
+    file did not change between our read and the write (optimistic
+    concurrency). Retries a few times so an in-flight user save is picked up
+    rather than clobbered. Returns True when the file now has the transformed
+    content (or the transform was a no-op), False when it stayed busy.
+    """
+    for _ in range(3):
+        try:
+            current = path.read_text(encoding="utf-8")
+        except OSError:
+            return False
+        new_text = transform(current)
+        if new_text == current:
+            return True
+        try:
+            if path.read_text(encoding="utf-8") == current:
+                atomic_write(path, new_text)
+                return True
+        except OSError:
+            return False
+    return False
 
 
 def has_ticked_checkbox(body: str) -> bool:

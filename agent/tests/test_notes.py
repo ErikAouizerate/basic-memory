@@ -1,16 +1,23 @@
 import email.message
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from notes import (
+    _rewrite_if_unchanged,
+    atomic_write,
     ensure_result_section,
     extract_urls,
     fetch_text,
     has_ticked_checkbox,
     is_hub,
+    is_stable,
     list_todo_files,
     read_note,
+    split_note,
     write_result_note,
 )
 
@@ -153,6 +160,77 @@ class EnsureResultSectionTest(unittest.TestCase):
         self.assertNotIn("[[Old]]", out)
         self.assertIn("[[New]]", out)
         self.assertEqual(out.count("## Résultat"), 1)
+
+
+class SplitNoteTest(unittest.TestCase):
+    def test_splits_frontmatter_and_body(self):
+        front, body, raw = split_note("---\ntitle: T\n---\n# Body")
+        self.assertEqual(front.get("title"), "T")
+        self.assertEqual(body, "# Body")
+        self.assertTrue(raw.startswith("---"))
+        self.assertTrue(raw.endswith("---\n"))
+
+    def test_no_frontmatter(self):
+        front, body, raw = split_note("just text")
+        self.assertEqual(front, {})
+        self.assertEqual(body, "just text")
+        self.assertEqual(raw, "")
+
+
+class AtomicWriteTest(unittest.TestCase):
+    def test_writes_and_leaves_no_temp_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "n.md"
+            atomic_write(p, "hello")
+            self.assertEqual(p.read_text(encoding="utf-8"), "hello")
+            self.assertFalse((Path(d) / "n.md.tmp").exists())
+
+
+class IsStableTest(unittest.TestCase):
+    def test_fresh_file_not_stable(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "n.md"
+            p.write_text("x", encoding="utf-8")
+            self.assertFalse(is_stable(p, min_age=10))
+
+    def test_old_file_stable(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "n.md"
+            p.write_text("x", encoding="utf-8")
+            past = time.time() - 100
+            os.utime(p, (past, past))
+            self.assertTrue(is_stable(p, min_age=10))
+
+
+class RewriteIfUnchangedTest(unittest.TestCase):
+    def test_writes_when_unchanged(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "n.md"
+            p.write_text("old", encoding="utf-8")
+            ok = _rewrite_if_unchanged(p, lambda t: t + "!")
+            self.assertTrue(ok)
+            self.assertEqual(p.read_text(encoding="utf-8"), "old!")
+
+    def test_noop_transform_returns_true(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "n.md"
+            p.write_text("old", encoding="utf-8")
+            self.assertTrue(_rewrite_if_unchanged(p, lambda t: t))
+
+    def test_never_clobbers_concurrent_save(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "n.md"
+            p.write_text("old", encoding="utf-8")
+
+            def merge(t):
+                p.write_text("user edit", encoding="utf-8")  # user saves during our window
+                return "---\nprocess: false\n---\n\n" + t  # built from what we read
+
+            ok = _rewrite_if_unchanged(p, merge)
+            self.assertTrue(ok)
+            text = p.read_text(encoding="utf-8")
+            self.assertIn("process: false", text)
+            self.assertIn("user edit", text)  # the in-flight save landed before our write
 
 
 if __name__ == "__main__":
