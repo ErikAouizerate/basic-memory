@@ -125,7 +125,6 @@ class RewriteIfUnchangedTest(unittest.TestCase):
             self.assertIn("process: false", text)
             self.assertIn("user edit", text)  # the in-flight save landed before our write
 ```
-```
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
