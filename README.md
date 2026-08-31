@@ -37,7 +37,7 @@ So this repository is a deployment, not a program:
 | `docker-compose.override.yml` | Dev-only override, auto-merged by `docker compose up`: publishes the gateway on `127.0.0.1:8080` and binds the named volumes to `./volumes/` |
 | `.env.example` | The one secret you must set |
 | `scripts/smoke-test.sh` | Proves auth works and the tools are reachable |
-| `scripts/syncthing-*.sh` | Device ID, folder setup and pairing for Syncthing |
+| `scripts/syncthing-*.sh` | Device ID, folder setup, pairing and direct QUIC/443 for Syncthing |
 
 The `basic-memory` service publishes no ports. Only `gateway` is routable, and
 it forwards nothing without a valid token. TLS and the public domain are
@@ -191,16 +191,42 @@ docker compose exec -T syncthing sh /scripts/syncthing-pair.sh <laptop-device-id
 
 ### Connectivity
 
-By default the server publishes **no port**: the laptop reaches it through
+By default the server publishes **no port**: devices reach it through
 Syncthing's encrypted relay network (slower transfers, zero host exposure —
 only devices paired by device ID can sync, and the relay only ever sees
 encrypted data). The notes volume is never exposed in clear text; the
 management UI is never published.
 
-To switch to direct connections, publish the sync port and open the VPS
-firewall — add `22000:22000/tcp` and `22000:22000/udp` to the `syncthing`
-service in `docker-compose.yml`, then `ufw allow 22000/tcp` and
-`ufw allow 22000/udp` on the host. Relays remain the fallback.
+For direct connections without opening a new port, expose the server on
+**UDP 443** through Syncthing's QUIC transport. QUIC is already
+end-to-end encrypted (device-ID authentication on top of TLS 1.3), so no
+extra tunnel or TLS terminator is needed — the sync protocol has no
+`https://` mode, but a hostname works in a QUIC address. This satisfies a
+443-only firewall rule; relays remain the fallback.
+
+Server-side setup:
+
+1. Free UDP 443 by disabling Traefik's HTTP/3 (the only other consumer of
+   that port): in `/etc/dokploy/traefik/traefik.yml` remove the `http3:`
+   block under the `websecure` entrypoint, then restart `dokploy-traefik`.
+   Browsers fall back to HTTP/2 — no functional loss.
+2. In the Syncthing service terminal, run
+   `sh /scripts/syncthing-direct.sh` — it adds `quic://0.0.0.0:443` to the
+   listen addresses (idempotent; `default` and the relay fallback stay).
+3. Dokploy UI → service → Ports: publish `443` → target `443`, protocol
+   **UDP** (this lives in the Dokploy UI, not in `docker-compose.yml`).
+4. On the host, `ufw allow 443/udp`.
+5. Point a hostname at the server: A record `syncthing.<your-domain>` →
+   VPS IP.
+
+Then, on each device (desktop or mobile — QUIC is native everywhere), set
+the server device's addresses to `quic://syncthing.<your-domain>:443,
+dynamic`. Syncthing keeps the QUIC connection (there is no reachable TCP
+path to upgrade to) and stays off the relay network.
+
+If HTTP/3 must remain enabled on the Dokploy host, the fallback is QUIC on
+UDP **22000** instead (same security, but a new firewall port): point the
+script's `QUIC_ADDRESS` at `quic://0.0.0.0:22000` and publish `22000/udp`.
 
 ### Troubleshooting
 
