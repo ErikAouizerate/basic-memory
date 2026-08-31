@@ -73,6 +73,44 @@ class RunOnceTest(unittest.TestCase):
             main.run_once(Path(d), Path(d) / "state", _FakeClient({"results": []}))
             self.assertTrue(note.exists())
 
+    def test_preserves_frontmatter(self):
+        with tempfile.TemporaryDirectory() as d:
+            note = self._setup(
+                d,
+                name="fm.md",
+                body="---\ntype: todo\npermalink: main/todo/zz\ntags:\n- veille\n---\n# Body",
+            )
+            client = _FakeClient({"results": [dict(RESULT)]})
+            with mock.patch("notes.fetch_text", return_value=""):
+                main.run_once(Path(d), Path(d) / "state", client)
+            text = note.read_text(encoding="utf-8")
+            self.assertIn("type: todo", text)
+            self.assertIn("permalink: main/todo/zz", text)
+            self.assertIn("tags:\n- veille", text)
+            self.assertIn("# Body", text)
+            self.assertIn("## Résultat", text)
+
+    def test_llm_error_counts_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._setup(d)
+            client = _FakeClient({"results": []})  # empty results -> LLMError
+            with mock.patch("notes.fetch_text", return_value=""):
+                handled, failed = main.run_once(Path(d), Path(d) / "state", client)
+            self.assertEqual(handled, 0)
+            self.assertEqual(failed, 1)
+
+    def test_lock_skips_when_held(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._setup(d)
+            client = _FakeClient({"results": [dict(RESULT)]})
+            lock = main._acquire_lock(Path(d) / "state")
+            try:
+                handled, failed = main.run_once(Path(d), Path(d) / "state", client)
+            finally:
+                lock.close()
+            self.assertEqual((handled, failed), (0, 0))
+            self.assertEqual(client.calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()

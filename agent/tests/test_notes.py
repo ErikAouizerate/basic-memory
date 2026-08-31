@@ -54,17 +54,20 @@ class ReadNoteTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "n.md"
             p.write_text("---\ntitle: T\ntype: hub\n---\n# Body", encoding="utf-8")
-            front, body = read_note(p)
+            front, body, raw = read_note(p)
             self.assertEqual(front.get("type"), "hub")
             self.assertIn("# Body", body)
+            self.assertTrue(raw.startswith("---"))
+            self.assertTrue(raw.endswith("---\n"))
 
     def test_no_frontmatter(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "n.md"
             p.write_text("just text", encoding="utf-8")
-            front, body = read_note(p)
+            front, body, raw = read_note(p)
             self.assertEqual(front, {})
             self.assertEqual(body, "just text")
+            self.assertEqual(raw, "")
 
 
 class HubAndCheckboxTest(unittest.TestCase):
@@ -118,6 +121,23 @@ class WriteResultNoteTest(unittest.TestCase):
             self.assertIn("title: Super Simple Software Factory", text)
             self.assertIn("## Observations", text)
             self.assertIn("[[Tools Catalog — Software & Services]]", text)
+
+    def test_sanitizes_title_in_filename(self):
+        with tempfile.TemporaryDirectory() as d:
+            result = {
+                "folder": "tools",
+                "title": "Foo/Bar: baz",
+                "note_type": "tool",
+                "url": None,
+                "tags": [],
+                "kind": "fact",
+                "observations": [],
+                "relations": [],
+                "body": "",
+            }
+            path = write_result_note(Path(d), result["folder"], result)
+            self.assertEqual(path.name, "FooBar: baz.md")
+            self.assertEqual(path.parent, Path(d) / "tools")
 
 
 class EnsureResultSectionTest(unittest.TestCase):

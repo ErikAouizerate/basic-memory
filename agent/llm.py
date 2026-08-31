@@ -50,7 +50,7 @@ class ChatClient:
             data = json.loads(raw)
             content = data["choices"][0]["message"]["content"]
             parsed = json.loads(content)
-        except (KeyError, IndexError, json.JSONDecodeError) as e:
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
             raise LLMError(f"LLM response unparseable: {raw[:300]!r}") from e
         if not isinstance(parsed, dict):
             raise LLMError("LLM response is not a JSON object")

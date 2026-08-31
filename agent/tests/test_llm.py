@@ -48,6 +48,12 @@ class ChatClientTest(unittest.TestCase):
         with self.assertRaises(LLMError):
             client.complete_json("sys", "user")
 
+    def test_non_string_content_raises_llm_error(self):
+        body = json.dumps({"choices": [{"message": {"content": ["not", "a", "string"]}}]}).encode("utf-8")
+        client = ChatClient("key", "https://zen.example/v1", "model", urlopen=_make_opener(content=body))
+        with self.assertRaises(LLMError):
+            client.complete_json("sys", "user")
+
 
 if __name__ == "__main__":
     unittest.main()

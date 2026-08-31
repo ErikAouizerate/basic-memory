@@ -22,14 +22,20 @@ def list_todo_files(notes_dir: Path) -> list[Path]:
     return sorted(p for p in todo.glob("*.md") if not CONFLICT_RE.search(p.name))
 
 
-def read_note(path: Path) -> tuple[dict, str]:
-    """Return (frontmatter dict, body str). Frontmatter may be {}."""
+def read_note(path: Path) -> tuple[dict, str, str]:
+    """Return (frontmatter dict, body str, raw frontmatter block str).
+
+    The raw block includes the leading/trailing ``---`` delimiters and a
+    trailing newline, or ``""`` when the note has no frontmatter. It is
+    preserved verbatim on write so list-valued fields (e.g. ``tags``)
+    survive a rewrite.
+    """
     text = path.read_text(encoding="utf-8")
     if text.startswith("---"):
         parts = text.split("---", 2)
         if len(parts) == 3:
-            return _parse_frontmatter(parts[1]), parts[2].lstrip("\n")
-    return {}, text
+            return _parse_frontmatter(parts[1]), parts[2].lstrip("\n"), "---" + parts[1] + "---\n"
+    return {}, text, ""
 
 
 def _parse_frontmatter(block: str) -> dict:
@@ -91,13 +97,26 @@ def fetch_text(url: str, urlopen=None, timeout: float = 20.0) -> str:
 def write_result_note(notes_dir: Path, folder: str, result: dict) -> Path:
     folder_dir = Path(notes_dir) / folder
     folder_dir.mkdir(parents=True, exist_ok=True)
-    path = folder_dir / f"{result['title']}.md"
+    path = folder_dir / f"{_safe_filename(result['title'])}.md"
     path.write_text(_render_note(result), encoding="utf-8")
     return path
 
 
+def _safe_filename(title: str) -> str:
+    """Strip path separators/control chars so an LLM title cannot escape the folder."""
+    cleaned = re.sub(r"[/\\\x00-\x1f]", "", title).strip().rstrip(".")
+    return cleaned or "Untitled"
+
+
+def _yaml_scalar(value: str) -> str:
+    """Quote a YAML scalar when leaving it plain would break the frontmatter."""
+    if value == "" or value != value.strip() or ":" in value or "#" in value or '"' in value or "'" in value:
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return value
+
+
 def _render_note(result: dict) -> str:
-    lines = ["---", f"title: {result['title']}", f"type: {result.get('note_type', 'note')}"]
+    lines = ["---", f"title: {_yaml_scalar(result['title'])}", f"type: {result.get('note_type', 'note')}"]
     if result.get("url"):
         lines.append(f"url: {result['url']}")
     tags = result.get("tags") or []
