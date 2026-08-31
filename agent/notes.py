@@ -9,6 +9,7 @@ TODO_DIR = "todo"
 RESULT_MARKER = "Traité — supprimable"
 RESULT_SECTION = "## Résultat"
 STABLE_SECONDS = 3
+REQUIRED_FRONTMATTER = ("title", "type", "process", "deletable")
 
 CONFLICT_RE = re.compile(r"\.sync-conflict-\d+-\d+.*\.md$", re.IGNORECASE)
 URL_RE = re.compile(r"https?://[^\s)\]}>\"']+")
@@ -107,6 +108,95 @@ def _rewrite_if_unchanged(path: Path, transform) -> bool:
         except OSError:
             return False
     return False
+
+
+def frontmatter_bool(frontmatter: dict, key: str) -> bool | None:
+    """Interpret a frontmatter key as a boolean: True/False, or None when the
+    key is absent."""
+    value = frontmatter.get(key)
+    if value is None:
+        return None
+    return str(value).strip().lower() in ("true", "1", "yes")
+
+
+def frontmatter_is_complete(frontmatter: dict) -> bool:
+    """True when all action keys the agent manages are present."""
+    return all(frontmatter.get(k) is not None for k in REQUIRED_FRONTMATTER)
+
+
+def _strip_result_checkbox(body: str) -> str:
+    """Remove the legacy ``- [ ] Traité — supprimable`` line; the flag now
+    lives in the frontmatter as ``deletable``."""
+    return re.sub(
+        r"(?im)^- \[[ xX]\]\s*" + re.escape(RESULT_MARKER) + r"\s*$\n?",
+        "",
+        body,
+    )
+
+
+def set_frontmatter_value(raw: str, key: str, value: str) -> str:
+    """Return the raw frontmatter block with ``key`` set to ``value``,
+    inserting the key before the closing delimiter when absent. Only touches
+    the block, never the body."""
+    pattern = rf"(?im)^({re.escape(key)}):\s*.*$"
+    if re.search(pattern, raw):
+        return re.sub(pattern, rf"\1: {value}", raw, count=1)
+    lines = raw.splitlines()
+    end = len(lines)
+    while end > 0 and lines[end - 1].strip() == "":
+        end -= 1
+    lines.insert(end - 1, f"{key}: {value}")
+    return "\n".join(lines) + "\n"
+
+
+def inject_frontmatter_text(stem: str, text: str) -> str:
+    """Return ``text`` with the action frontmatter ensured (merge only:
+    existing keys are preserved, missing ones are added). Hubs are left
+    untouched. Any stray legacy checkbox is stripped from the body. Returns
+    ``text`` unchanged when nothing to do."""
+    front, body, raw = split_note(text)
+    if is_hub(front) or frontmatter_is_complete(front):
+        return text
+    body = _strip_result_checkbox(body)
+    if raw == "":
+        block = (
+            "---\n"
+            f"title: {_yaml_scalar(stem)}\n"
+            "type: todo\n"
+            "tags:\n"
+            "- todo\n"
+            "process: false\n"
+            "deletable: false\n"
+            "---\n"
+        )
+        return block + ("\n" + body if body else "")
+    lines = raw.splitlines()
+    inserts = []
+    for key, value in (
+        ("title", _yaml_scalar(stem)),
+        ("type", "todo"),
+        ("process", "false"),
+        ("deletable", "false"),
+    ):
+        if front.get(key) is None:
+            inserts.append(f"{key}: {value}")
+    if not re.search(r"(?im)^tags:", raw):
+        inserts.append("tags:")
+        inserts.append("- todo")
+    if not inserts:
+        return text
+    end = len(lines)
+    while end > 0 and lines[end - 1].strip() == "":
+        end -= 1
+    lines[end - 1 : end - 1] = inserts
+    return "\n".join(lines) + "\n" + ("\n" + body if body else "")
+
+
+def ensure_frontmatter(path: Path) -> bool:
+    """Inject/migrate the action frontmatter atomically, without clobbering a
+    concurrent user save. Returns True when the note now has it (or already
+    did), False when the file stayed busy."""
+    return _rewrite_if_unchanged(path, lambda text: inject_frontmatter_text(path.stem, text))
 
 
 def has_ticked_checkbox(body: str) -> bool:

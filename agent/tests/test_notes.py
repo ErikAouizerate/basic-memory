@@ -9,14 +9,19 @@ from unittest import mock
 from notes import (
     _rewrite_if_unchanged,
     atomic_write,
+    ensure_frontmatter,
     ensure_result_section,
     extract_urls,
     fetch_text,
+    frontmatter_bool,
+    frontmatter_is_complete,
     has_ticked_checkbox,
+    inject_frontmatter_text,
     is_hub,
     is_stable,
     list_todo_files,
     read_note,
+    set_frontmatter_value,
     split_note,
     write_result_note,
 )
@@ -231,6 +236,98 @@ class RewriteIfUnchangedTest(unittest.TestCase):
             text = p.read_text(encoding="utf-8")
             self.assertIn("process: false", text)
             self.assertIn("user edit", text)  # the in-flight save landed before our write
+
+
+class FrontmatterBoolTest(unittest.TestCase):
+    def test_true_false_and_none(self):
+        self.assertTrue(frontmatter_bool({"process": "true"}, "process"))
+        self.assertTrue(frontmatter_bool({"process": "TRUE"}, "process"))
+        self.assertFalse(frontmatter_bool({"process": "false"}, "process"))
+        self.assertFalse(frontmatter_bool({"process": "no"}, "process"))
+        self.assertIsNone(frontmatter_bool({}, "process"))
+
+
+class FrontmatterCompleteTest(unittest.TestCase):
+    def test_complete_when_all_present(self):
+        front = {"title": "T", "type": "todo", "process": "false", "deletable": "false"}
+        self.assertTrue(frontmatter_is_complete(front))
+
+    def test_incomplete_when_missing(self):
+        self.assertFalse(frontmatter_is_complete({"type": "todo"}))
+        self.assertFalse(frontmatter_is_complete({}))
+
+
+class InjectFrontmatterTest(unittest.TestCase):
+    def test_adds_frontmatter_to_bare_note(self):
+        out = inject_frontmatter_text("Ma demande", "Contenu de la demande")
+        self.assertIn("title: Ma demande", out)
+        self.assertIn("type: todo", out)
+        self.assertIn("process: false", out)
+        self.assertIn("deletable: false", out)
+        self.assertIn("- todo", out)
+        self.assertIn("Contenu de la demande", out)
+        self.assertLess(out.index("---"), out.index("Contenu"))
+
+    def test_merges_missing_keys_only(self):
+        out = inject_frontmatter_text("foo", "---\ntype: todo\npermalink: main/todo/zz\n---\n# Body")
+        self.assertIn("permalink: main/todo/zz", out)
+        self.assertIn("process: false", out)
+        self.assertEqual(out.count("type: todo"), 1)
+
+    def test_keeps_existing_values(self):
+        out = inject_frontmatter_text("foo", "---\ntitle: Mon titre\nprocess: true\n---\nB")
+        self.assertIn("title: Mon titre", out)
+        self.assertIn("process: true", out)
+        self.assertNotIn("title: foo", out)
+
+    def test_idempotent(self):
+        text = "---\ntitle: T\ntype: todo\ntags:\n- todo\nprocess: false\ndeletable: false\n---\nBody"
+        self.assertEqual(inject_frontmatter_text("T", text), text)
+
+    def test_skips_hub(self):
+        text = "---\ntype: hub\n---\n# Hub"
+        self.assertEqual(inject_frontmatter_text("hub", text), text)
+
+    def test_strips_stray_result_checkbox(self):
+        text = "x\n\n## Résultat\n- [[Foo]]\n- [ ] Traité — supprimable\n"
+        out = inject_frontmatter_text("x", text)
+        self.assertNotIn("Traité — supprimable", out)
+        self.assertIn("[[Foo]]", out)
+
+
+class EnsureFrontmatterTest(unittest.TestCase):
+    def test_injects_on_disk(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "n.md"
+            p.write_text("demande", encoding="utf-8")
+            self.assertTrue(ensure_frontmatter(p))
+            text = p.read_text(encoding="utf-8")
+            self.assertIn("process: false", text)
+            self.assertIn("demande", text)
+
+    def test_noop_on_complete_note(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "n.md"
+            text = "---\ntitle: T\ntype: todo\nprocess: false\ndeletable: false\n---\nB"
+            p.write_text(text, encoding="utf-8")
+            self.assertTrue(ensure_frontmatter(p))
+            self.assertEqual(p.read_text(encoding="utf-8"), text)
+
+
+class SetFrontmatterValueTest(unittest.TestCase):
+    def test_replaces_value(self):
+        raw = "---\nprocess: true\n---\n"
+        self.assertEqual(set_frontmatter_value(raw, "process", "false"), "---\nprocess: false\n---\n")
+
+    def test_inserts_missing_key_before_closing(self):
+        raw = "---\ntype: todo\n---\n"
+        out = set_frontmatter_value(raw, "process", "false")
+        self.assertEqual(out.count("---"), 2)
+        self.assertLess(out.index("process: false"), out.index("---\n", out.index("process: false")))
+
+    def test_single_replacement(self):
+        out = set_frontmatter_value("---\nprocess: true\n---\n", "process", "false")
+        self.assertEqual(out.count("process: false"), 1)
 
 
 if __name__ == "__main__":
