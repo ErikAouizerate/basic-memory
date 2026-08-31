@@ -161,6 +161,50 @@ docker compose exec syncthing syncthing cli --gui-address 127.0.0.1:8384 \
 
 The helper scripts wrap this, so prefer them over raw `cli` calls.
 
+## Todo agent (autonomous processing of todo notes)
+
+The `todo-agent` service polls the notes volume every minute (`POLL_INTERVAL`)
+and processes new or modified notes in the `todo/` folder. A todo note is a
+request written from any synced device; the agent interprets it via the
+OpenCode Zen API, writes the result into the knowledge base and reports back
+inside the todo note.
+
+Variables (all optional except `LLM_API_KEY`):
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `LLM_API_KEY` | — (required) | OpenCode Zen API key (`https://opencode.ai/zen/v1`) |
+| `LLM_BASE_URL` | `https://opencode.ai/zen/v1` | OpenAI-compatible base URL |
+| `LLM_MODEL` | `deepseek-v4-flash` | Model name |
+| `POLL_INTERVAL` | `60` | Seconds between cycles |
+| `NOTES_DIR` | `/app/data/basic-memory/main` | Project root, where `todo/` lives (mounted `notes` volume) |
+| `STATE_DIR` | `/app/state` | State file location (`todo-agent-state` volume) |
+
+Lifecycle of a todo note:
+
+1. Drop a note in `todo/` (e.g. a URL to evaluate). The agent detects it at the
+   next cycle (sha256 of the file content), fetches the URLs for context, and
+   asks the LLM for a JSON result.
+2. The result note is written to the requested folder (tool evaluations land in
+   `tools/`, following the existing note conventions) and the todo note gains a
+   `## Résultat` section with `[[wikilinks]]` and a checkbox
+   `- [ ] Traité — supprimable`.
+3. When you tick the checkbox (`- [x] Traité — supprimable`), the agent deletes
+   the todo note at the next cycle. The result note stays in the knowledge base.
+4. Editing an already-processed todo note reprocesses it (the result is updated,
+   not duplicated).
+
+Notes are processed top-level only; `*.sync-conflict-*` files and notes with
+`type: hub` frontmatter (e.g. `TODO — General Hub`) are ignored. The agent's
+bookkeeping lives in the `todo-agent-state` volume — never in the synced notes
+folder, so it cannot cause sync conflicts.
+
+Verify a single cycle manually:
+
+```bash
+docker compose exec todo-agent python /agent/main.py --once
+```
+
 ## Rotating the token
 
 Change `MCP_TOKEN` in Dokploy, redeploy, and update every client. There is a

@@ -3,11 +3,13 @@
 ## What this is
 
 - No application code: a Dokploy deployment of the upstream `basic-memory`
-  image (MCP server) + Caddy gateway + Syncthing notes sync. All behavior
-  lives in `docker-compose.yml`, `Caddyfile`, `scripts/`.
+  image (MCP server) + Caddy gateway + Syncthing notes sync + a small
+  `todo-agent` service. All behavior lives in `docker-compose.yml`,
+  `Caddyfile`, `agent/`, `scripts/`.
 - Notes live in the `notes` named volume (`/app/data/basic-memory` in the
   container); the index/`memory.db` live in the `config` volume. Don't
-  search for source code — there is none.
+  search for source code — there is none (except `agent/`, which is the
+  todo-agent's stdlib-only Python code).
 
 ## Local workflow
 
@@ -56,6 +58,28 @@
   routes through Traefik internally. Ports to localhost belong in
   `docker-compose.local.yml` only.
 
+## Todo agent (load-bearing details)
+
+- The `todo-agent` service polls the `notes` volume (`todo/` folder) every
+  `POLL_INTERVAL` seconds (default 60) and processes new/modified notes via the
+  OpenCode Zen API (`LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` env vars; image
+  `python:3.12-slim`, stdlib only, no dependencies to install).
+- It writes markdown directly on the `notes` volume (like syncthing) — the
+  basic-memory file watcher reindexes. Its state file lives in the
+  `todo-agent-state` volume (`/app/state/state.json`), deliberately NOT in the
+  notes volume, so it never syncs and never conflicts.
+- `*.sync-conflict-*` files and `type: hub` notes (e.g. `TODO — General Hub`)
+  are ignored.
+- A ticked checkbox `- [x] Traité — supprimable` in a todo note makes the agent
+  delete that note at the next cycle; a modified processed note is reprocessed
+  (result updated, not duplicated). The agent records the hash after its own
+  writes, so its edits never trigger a reprocess loop.
+- Same env gotcha as `MCP_TOKEN`: compose interpolates the shell environment
+  over `.env`, so an exported `LLM_API_KEY` wins over `.env`.
+- Manual verification: `docker compose exec todo-agent python /agent/main.py --once`;
+  unit tests run with
+  `docker run --rm -v "$PWD/agent:/app:ro" -w /app python:3.12-slim python -m unittest discover -s tests -v`.
+
 ## Conventions
 
 - Communication with the user: **French**. Code, comments, docs, tests:
@@ -63,6 +87,7 @@
 - Commits directly on `main`, conventional prefixes (`feat:`/`fix:`/`docs:`/`chore:`),
   push to `origin` (GitLab).
 - No test framework: verify with `compose config` + `smoke-test.sh`;
-  syncthing changes with the pairing scripts.
+  syncthing changes with the pairing scripts; `agent/` uses stdlib `unittest`
+  run in a `python:3.12-slim` container (see Todo agent above).
 - `README.md` is the deployment doc; update it when compose/scripts behavior
   changes (docs are committed with the code).

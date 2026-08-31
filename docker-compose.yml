@@ -79,10 +79,34 @@ services:
       - dokploy-network
     restart: unless-stopped
 
+  todo-agent:
+    # Autonomously processes todo/ notes on the notes volume via the
+    # OpenCode Zen API (see README "Todo agent").
+    image: python:3.12-slim
+    working_dir: /agent
+    command: ["python", "/agent/main.py"]
+    environment:
+      LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY is required}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://opencode.ai/zen/v1}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash}
+      POLL_INTERVAL: ${POLL_INTERVAL:-60}
+      # Project root, not BASIC_MEMORY_HOME: the notes for project "main"
+      # live at /app/data/basic-memory/main, so todo/ resolves correctly.
+      NOTES_DIR: /app/data/basic-memory/main
+      STATE_DIR: /app/state
+    volumes:
+      - ./agent:/agent:ro
+      - notes:/app/data
+      # Agent bookkeeping (state.json). Deliberately outside the notes
+      # volume: never synced by Syncthing, never conflicts.
+      - todo-agent-state:/app/state
+    restart: unless-stopped
+
 volumes:
   notes:
   config:
   syncthing-config:
+  todo-agent-state:
 
 networks:
   dokploy-network:

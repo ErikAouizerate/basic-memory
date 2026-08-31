@@ -34,6 +34,9 @@ class ChatClient:
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
+                # opencode.ai sits behind Cloudflare bot protection which
+                # rejects urllib's default Python-urllib UA.
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
             },
         )
         try:
