@@ -2,3 +2,11 @@
 
 # Local bind-mount targets for the compose override (docker-compose.override.yml).
 volumes/
+
+# Python (agent/ todo-agent).
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
