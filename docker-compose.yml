@@ -64,8 +64,6 @@ services:
       # Same notes volume as basic-memory; the shared folder is
       # /var/syncthing/data/basic-memory.
       - notes:/var/syncthing/data
-    ports:
-      - "443:443/udp"
     restart: unless-stopped
 
   gateway:
