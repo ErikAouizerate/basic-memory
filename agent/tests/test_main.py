@@ -126,6 +126,23 @@ class RunOnceTest(unittest.TestCase):
             self.assertIn("## Résultat", text)
             self.assertIn("process: false", text)
 
+    def test_adds_memory_metadata_before_processing_ticked_note(self):
+        with tempfile.TemporaryDirectory() as d:
+            note = self._setup(
+                d,
+                name="fm.md",
+                body="---\ntype: todo\nprocess: true\ndeletable: false\n---\n# Body",
+            )
+            past = time.time() - 100
+            os.utime(note, (past, past))
+            client = _FakeClient({"results": [dict(RESULT)]})
+            with mock.patch("notes.fetch_text", return_value=""):
+                main.run_once(Path(d), Path(d) / "state", client)
+            text = note.read_text(encoding="utf-8")
+            self.assertIn("memory_class: working", text)
+            self.assertIn("lifecycle: raw", text)
+            self.assertIn("source: human", text)
+
     def test_llm_error_counts_failure(self):
         with tempfile.TemporaryDirectory() as d:
             self._setup(d, body=PROCESSED + "https://github.com/a/b")

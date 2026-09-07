@@ -135,6 +135,24 @@ class WriteResultNoteTest(unittest.TestCase):
             self.assertIn("## Observations", text)
             self.assertIn("[[Tools Catalog — Software & Services]]", text)
 
+    def test_generated_result_has_memory_metadata_and_no_kind(self):
+        with tempfile.TemporaryDirectory() as d:
+            result = {
+                "folder": "tools",
+                "title": "Generated Tool",
+                "note_type": "tool",
+                "url": "https://example.com/tool",
+                "tags": [],
+                "kind": "fact",
+                "body": "Generated body.",
+            }
+            path = write_result_note(Path(d), result["folder"], result)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("memory_class: semantic", text)
+            self.assertIn("lifecycle: candidate", text)
+            self.assertIn("source: external", text)
+            self.assertNotIn("kind:", text)
+
     def test_sanitizes_title_in_filename(self):
         with tempfile.TemporaryDirectory() as d:
             result = {
@@ -273,7 +291,15 @@ class FrontmatterBoolTest(unittest.TestCase):
 
 class FrontmatterCompleteTest(unittest.TestCase):
     def test_complete_when_all_present(self):
-        front = {"title": "T", "type": "todo", "process": "false", "deletable": "false"}
+        front = {
+            "title": "T",
+            "type": "todo",
+            "process": "false",
+            "deletable": "false",
+            "memory_class": "working",
+            "lifecycle": "raw",
+            "source": "human",
+        }
         self.assertTrue(frontmatter_is_complete(front))
 
     def test_incomplete_when_missing(self):
@@ -288,9 +314,19 @@ class InjectFrontmatterTest(unittest.TestCase):
         self.assertIn("type: todo", out)
         self.assertIn("process: false", out)
         self.assertIn("deletable: false", out)
+        self.assertIn("memory_class: working", out)
+        self.assertIn("lifecycle: raw", out)
+        self.assertIn("source: human", out)
         self.assertIn("- todo", out)
         self.assertIn("Contenu de la demande", out)
         self.assertLess(out.index("---"), out.index("Contenu"))
+
+    def test_adds_memory_metadata_to_existing_todo_frontmatter(self):
+        text = "---\ntitle: T\ntype: todo\nprocess: false\ndeletable: false\n---\nBody"
+        out = inject_frontmatter_text("T", text)
+        self.assertIn("memory_class: working", out)
+        self.assertIn("lifecycle: raw", out)
+        self.assertIn("source: human", out)
 
     def test_merges_missing_keys_only(self):
         out = inject_frontmatter_text("foo", "---\ntype: todo\npermalink: main/todo/zz\n---\n# Body")
@@ -305,7 +341,7 @@ class InjectFrontmatterTest(unittest.TestCase):
         self.assertNotIn("title: foo", out)
 
     def test_idempotent(self):
-        text = "---\ntitle: T\ntype: todo\ntags:\n- todo\nprocess: false\ndeletable: false\n---\nBody"
+        text = "---\ntitle: T\ntype: todo\ntags:\n- todo\nprocess: false\ndeletable: false\nmemory_class: working\nlifecycle: raw\nsource: human\n---\nBody"
         self.assertEqual(inject_frontmatter_text("T", text), text)
 
     def test_skips_hub(self):
@@ -332,7 +368,7 @@ class EnsureFrontmatterTest(unittest.TestCase):
     def test_noop_on_complete_note(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "n.md"
-            text = "---\ntitle: T\ntype: todo\nprocess: false\ndeletable: false\n---\nB"
+            text = "---\ntitle: T\ntype: todo\nprocess: false\ndeletable: false\nmemory_class: working\nlifecycle: raw\nsource: human\n---\nB"
             p.write_text(text, encoding="utf-8")
             self.assertTrue(ensure_frontmatter(p))
             self.assertEqual(p.read_text(encoding="utf-8"), text)

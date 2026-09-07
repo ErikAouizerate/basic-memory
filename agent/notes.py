@@ -9,7 +9,15 @@ TODO_DIR = "todo"
 RESULT_MARKER = "Traité — supprimable"
 RESULT_SECTION = "## Résultat"
 STABLE_SECONDS = 3
-REQUIRED_FRONTMATTER = ("title", "type", "process", "deletable")
+REQUIRED_FRONTMATTER = (
+    "title",
+    "type",
+    "process",
+    "deletable",
+    "memory_class",
+    "lifecycle",
+    "source",
+)
 
 CONFLICT_RE = re.compile(r"\.sync-conflict-\d+-\d+.*\.md$", re.IGNORECASE)
 URL_RE = re.compile(r"https?://[^\s)\]}>\"']+")
@@ -167,6 +175,9 @@ def inject_frontmatter_text(stem: str, text: str) -> str:
             "- todo\n"
             "process: false\n"
             "deletable: false\n"
+            "memory_class: working\n"
+            "lifecycle: raw\n"
+            "source: human\n"
             "---\n"
         )
         return block + ("\n" + body if body else "")
@@ -177,6 +188,9 @@ def inject_frontmatter_text(stem: str, text: str) -> str:
         ("type", "todo"),
         ("process", "false"),
         ("deletable", "false"),
+        ("memory_class", "working"),
+        ("lifecycle", "raw"),
+        ("source", "human"),
     ):
         if front.get(key) is None:
             inserts.append(f"{key}: {value}")
@@ -238,7 +252,7 @@ def write_result_note(notes_dir: Path, folder: str, result: dict) -> Path:
     folder_dir = Path(notes_dir) / folder
     folder_dir.mkdir(parents=True, exist_ok=True)
     path = folder_dir / f"{_safe_filename(result['title'])}.md"
-    path.write_text(_render_note(result), encoding="utf-8")
+    path.write_text(_render_note(result, folder), encoding="utf-8")
     return path
 
 
@@ -255,7 +269,7 @@ def _yaml_scalar(value: str) -> str:
     return value
 
 
-def _render_note(result: dict) -> str:
+def _render_note(result: dict, folder: str) -> str:
     lines = ["---", f"title: {_yaml_scalar(result['title'])}", f"type: {result.get('note_type', 'note')}"]
     if result.get("url"):
         lines.append(f"url: {result['url']}")
@@ -263,8 +277,13 @@ def _render_note(result: dict) -> str:
     if tags:
         lines.append("tags:")
         lines.extend(f"- {t}" for t in tags)
-    if result.get("kind"):
-        lines.append(f"kind: {result['kind']}")
+    memory_class = "procedural" if folder in {"guidelines", "persona"} else "working" if folder == "todo" else "semantic"
+    source = "external" if result.get("url") else "agent"
+    lines.extend([
+        f"memory_class: {memory_class}",
+        "lifecycle: candidate",
+        f"source: {source}",
+    ])
     lines.append("---")
     if result.get("body"):
         lines.extend(["", result["body"].strip()])

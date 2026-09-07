@@ -29,7 +29,6 @@ Return STRICT JSON (no markdown, no commentary) with this schema:
       "note_type": "tool",
       "url": "https://... or null",
       "tags": ["tag1", "tag2"],
-      "kind": "fact",
       "observations": ["[usage] ...", "[status] ..."],
       "relations": ["[[Tools Catalog — Software & Services]]"],
       "body": "Markdown body: what the tool is, how to integrate it in the user's workflow (French)."
@@ -128,10 +127,13 @@ def _run_once(notes_dir: Path, state_dir: Path, client: llm.ChatClient) -> tuple
             front, _, _ = notes.read_note(path)
             if notes.is_hub(front):
                 continue
+            if not notes.frontmatter_is_complete(front):
+                is_ticked = notes.frontmatter_bool(front, "process") is True
+                if (not is_ticked and not notes.is_stable(path)) or not notes.ensure_frontmatter(path):
+                    continue
+                front, _, _ = notes.read_note(path)
             rel = str(path.relative_to(notes_dir))
             if notes.frontmatter_bool(front, "process") is not True:
-                if not notes.frontmatter_is_complete(front) and notes.is_stable(path):
-                    notes.ensure_frontmatter(path)
                 continue
             current = state_mod.sha256_file(path)
             if current == store.hash_for(rel):

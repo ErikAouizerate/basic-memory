@@ -71,10 +71,12 @@
   `POLL_INTERVAL` seconds (default 5) and processes notes via the OpenCode Zen
   API (`LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` env vars; image
   `python:3.12-slim`, stdlib only, no dependencies to install).
-- New notes get action frontmatter injected at the next cycle (`title`,
-  `type: todo`, `tags: [todo]`, `process: false`, `deletable: false`) — merged
-  in, existing keys never overwritten. Processing is gated on `process: true`;
-  after processing the agent resets it to `false` (re-tick = reprocess).
+- New todo notes get action and memory frontmatter injected at the next cycle
+  (`title`, `type: todo`, `tags: [todo]`, `process: false`, `deletable: false`,
+  `memory_class: working`, `lifecycle: raw`, `source: human`) — merged in,
+  existing keys never overwritten. Processing is gated on `process: true`; after
+  processing the agent resets it to `false` (re-tick = reprocess). Generated
+  result notes use `candidate` lifecycle metadata and omit the obsolete `kind`.
 - A note with `deletable: true` in its frontmatter is deleted at the next
   cycle; the legacy body checkbox `- [x] Traité — supprimable` is still
   honored. `*.sync-conflict-*` files and `type: hub` notes (e.g.
@@ -94,6 +96,38 @@
 - Manual verification: `docker compose exec todo-agent python /agent/main.py --once`;
   unit tests run with
   `docker run --rm -v "$PWD/agent:/app:ro" -w /app python:3.12-slim python -m unittest discover -s tests -v`.
+
+## Shared Basic Memory notes
+
+- Managed notes in the `notes` volume (project `main`) are shared agent memory.
+  Modify them only through the Basic Memory MCP tools; never edit those
+  Markdown files directly. The `todo-agent` is the deliberate exception
+  because it owns its filesystem processing workflow.
+- New and managed notes use `memory_class` (`episodic`, `semantic`,
+  `procedural`, or `working`), `lifecycle` (`raw`, `candidate`, `canonical`,
+  `superseded`, or `archived`), and `source` (`human`, `agent`, or `external`).
+- `reviewed_at` is used only after review or promotion. `valid_until` is used
+  only for knowledge that can expire. Both dates use `YYYY-MM-DD`.
+- `kind` is no longer used for new notes. Agents may write raw or candidate
+  captures, proposals, and working state, but canonical promotion requires
+  explicit user or curator authorization. Canonical notes are not rewritten or
+  deleted without that authorization.
+
+### Retrieval by memory class
+
+- `episodic` — search by date, event, participants, and context; include
+  historical states when asked about what happened.
+- `semantic` — prefer `lifecycle: canonical`; check `valid_until` and reject
+  expired values; never silently merge conflicting candidates.
+- `procedural` — load active canonical guides, policies, and skills directly
+  when the task requires them; do not treat them as ordinary historical
+  search results.
+- `working` — restrict retrieval to the current task or project; do not carry
+  stale working notes into unrelated tasks.
+
+These retrieval and write rules are conventions, not ACLs: agents sharing the
+same MCP credentials can technically write anywhere. Frontmatter is governance,
+not a security boundary.
 
 ## Conventions
 
