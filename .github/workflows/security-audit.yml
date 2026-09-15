@@ -1,0 +1,88 @@
+name: security-audit
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+  security-events: write
+
+env:
+  IMAGE: ghcr.io/erikaouizerate/security-check:latest
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull the audit image
+        run: docker pull "$IMAGE"
+
+      - name: Run audit
+        run: make audit IMAGE="$IMAGE"
+
+      - name: Upload SARIF (gitleaks)
+        if: always() && hashFiles('security-reports/gitleaks.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: security-reports/gitleaks.sarif
+          category: gitleaks
+
+      - name: Upload SARIF (opengrep)
+        if: always() && hashFiles('security-reports/opengrep.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: security-reports/opengrep.sarif
+          category: opengrep
+
+      - name: Upload SARIF (checkov)
+        if: always() && hashFiles('security-reports/checkov.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: security-reports/checkov.sarif
+          category: checkov
+
+      - name: Upload SARIF (trivy-config)
+        if: always() && hashFiles('security-reports/trivy-config.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: security-reports/trivy-config.sarif
+          category: trivy-config
+
+      - name: Upload SARIF (osv)
+        if: always() && hashFiles('security-reports/osv.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: security-reports/osv.sarif
+          category: osv
+
+      - name: Upload SARIF (trivy-fs)
+        if: always() && hashFiles('security-reports/trivy-fs.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: security-reports/trivy-fs.sarif
+          category: trivy-fs
+
+      - name: Upload reports artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: security-reports/
+          if-no-files-found: warn
