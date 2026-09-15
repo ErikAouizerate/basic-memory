@@ -35,7 +35,15 @@ jobs:
         run: docker pull "$IMAGE"
 
       - name: Run audit
-        run: make audit IMAGE="$IMAGE"
+        run: |
+          mkdir -p "$HOME/.cache/security-audit"
+          docker run --rm \
+            -u "$(id -u):$(id -g)" \
+            -e FAIL_ON_SECRETS -e FAIL_ON_SAST -e FAIL_ON_IAC -e FAIL_ON_SCA \
+            -v "$PWD:/workspace" \
+            -v "$HOME/.cache/security-audit:/cache" \
+            -w /workspace \
+            "$IMAGE" audit all
 
       - name: Upload SARIF (gitleaks)
         if: always() && hashFiles('security-reports/gitleaks.sarif') != ''
