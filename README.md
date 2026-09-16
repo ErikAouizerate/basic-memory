@@ -38,6 +38,7 @@ So this repository is a deployment, not a program:
 | `.env.example` | The one secret you must set |
 | `scripts/smoke-test.sh` | Proves auth works and the tools are reachable |
 | `scripts/syncthing-*.sh` | Device ID, folder setup, pairing and direct QUIC/443 for Syncthing |
+| `scripts/Dockerfile` | Bakes `scripts/syncthing-*.sh` into the syncthing image at `/scripts` (a repo bind mount would be emptied by Dokploy's re-clone) |
 
 The `basic-memory` service publishes no ports. Only `gateway` is routable, and
 it forwards nothing without a valid token. TLS and the public domain are
@@ -56,7 +57,8 @@ echo "MCP_TOKEN=$(openssl rand -base64 32)" > .env
 sh scripts/init-local-volumes.sh
 
 # docker-compose.override.yml is merged automatically — no -f flag needed.
-docker compose up -d
+# --build (re)builds the syncthing image with the helper scripts baked in.
+docker compose up -d --build
 
 set -a && source .env && set +a
 BASE_URL=http://localhost:8080 ./scripts/smoke-test.sh
@@ -111,7 +113,7 @@ todo agent. The repo — `volumes/` included — is the workspace.
   `dokploy-network` external network.
 - **CLI**: `npm install -g @devcontainers/cli`, then
   `devcontainer up --workspace-folder .`.
-- **Without VS Code**: `sh scripts/init-local-volumes.sh && docker compose up -d`.
+- **Without VS Code**: `sh scripts/init-local-volumes.sh && docker compose up -d --build`.
 
 Inside the container the smoke test targets the gateway by service name:
 
@@ -155,8 +157,8 @@ The `syncthing` service shares the `notes` volume with the MCP server, so you
 can edit the knowledge base on your laptop (Obsidian, VS Code, ...) and have
 changes flow both ways in real time. The management UI is bound to loopback
 and never published; all configuration happens through the helper scripts,
-which run **inside the container** (the repo's `scripts/` directory is
-mounted read-only at `/scripts`).
+which run **inside the container** — they are baked into the syncthing image
+at `/scripts` at build time, so they survive Dokploy re-cloning the repository.
 
 ### First-time pairing
 

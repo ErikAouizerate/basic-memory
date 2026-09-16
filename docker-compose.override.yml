@@ -20,7 +20,6 @@ services:
 
   syncthing:
     volumes:
-      - ./scripts:/scripts:ro
       - ./volumes/syncthing-config:/var/syncthing/config
       - ./volumes/notes:/var/syncthing/data
 

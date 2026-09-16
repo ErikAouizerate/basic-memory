@@ -13,7 +13,7 @@
 
 ## Local workflow
 
-- Start: `sh scripts/init-local-volumes.sh && docker compose up -d`
+- Start: `sh scripts/init-local-volumes.sh && docker compose up -d --build`
   (`docker-compose.override.yml` is auto-merged — no `-f` flag. It publishes
   the gateway on `127.0.0.1:8080` only and bind-mounts the named volumes to
   `./volumes/<volume-name>`, so notes/config are editable on the host).
@@ -43,8 +43,13 @@
   (`scripts/syncthing-{device-id,setup,pair}.sh`) run **inside the
   container** — invoke with `docker compose exec -T syncthing sh
   /scripts/...` locally, or `sh /scripts/...` in the Dokploy service
-  terminal (`./scripts:/scripts:ro` is mounted by compose). They wrap
-  `syncthing cli` with the API key read from the container's `config.xml`.
+  terminal. They wrap `syncthing cli` with the API key read from the
+  container's `config.xml`.
+- The syncthing service builds `scripts/Dockerfile`, which bakes
+  `scripts/syncthing-*.sh` into the image at `/scripts`. Never bind-mount the
+  repo's `scripts/` into it: Dokploy re-clones the repo on every deploy and a
+  repo-relative mount becomes an empty directory. Rebuild with
+  `docker compose up -d --build` after changing a helper script.
 - The pairing folder ID is stored in the `syncthing-config` volume
   (`/var/syncthing/config/syncthing-folder-id`), not in git; if it is lost
   `setup.sh` reuses the sole existing folder before minting a new ID.
